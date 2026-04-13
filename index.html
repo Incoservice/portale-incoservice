@@ -984,18 +984,21 @@ function renderProduzione() {
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
+  console.log("[PROD] Timer avviato - refresh ogni 30 secondi (TEST)");
   prodRefreshTimer = setInterval(function() {
-    // Salva stato prima del reload
+    console.log("[PROD] Salvo stato e ricarico...");
     var list = ORDINI_DATA.filter(function(o) {
       var cat = calcolaStato(o).cat;
       return cat === "zn" || cat === "vern" || cat === "prod";
     });
     var statoAttuale = {};
     list.forEach(function(o) { statoAttuale[o.impegno] = prodHash(o); });
-    try { localStorage.setItem("prod_stato", JSON.stringify(statoAttuale)); } catch(e) {}
-    // Ricarica pagina normalmente
+    try { 
+      localStorage.setItem("prod_stato", JSON.stringify(statoAttuale));
+      console.log("[PROD] Stato salvato, ricarico ora...");
+    } catch(e) { console.log("[PROD] Errore localStorage:", e); }
     location.reload(true);
-  }, 2 * 60 * 1000);
+  }, 30 * 1000); // 30 secondi per test
 }
 
 document.addEventListener("DOMContentLoaded", function() {
