@@ -859,19 +859,18 @@ function deletePin(p) {
 // // -- VISTA PRODUZIONE -----------------------------------------------
 var prodRefreshTimer = null;
 
+function prodHash(o) {
+  return [o.produzione,o.invioZN,o.ritornoZN,o.pulizia,o.invioRAL,
+          o.verniciatura,o.imballo,o.consStimata,calcolaStato(o).label].join("|");
+}
+
 function cardHTMLProd(o) {
   var s = calcolaStato(o);
   var steps = getSteps(o);
-  var lateClass = (o.consRichiesta && o.consRichiesta < new Date().toISOString().slice(0,10)) ? "cons-late" : "";
-  var consHTML = (o.consStimata || o.consRichiesta) ? (
-    "<div class=\"cons-row\">" +
-    (o.consStimata ? "<div class=\"cons-item\"><span class=\"lbl\">Stima consegna</span><span class=\"val\">" + fD(o.consStimata) + "</span></div>" : "") +
-    (o.consRichiesta ? "<div class=\"cons-item\"><span class=\"lbl\">Data richiesta</span><span class=\"val " + lateClass + "\">" + fD(o.consRichiesta) + "</span></div>" : "") +
-    "</div>"
-  ) : "";
-  var odlHTML = o.odl.length ? "<div class=\"odl-row\">" + o.odl.map(function(n) { return "<span class=\"odl-chip\">ODL " + n + "</span>"; }).join("") + "</div>" : "";
+  var fin = (o.finitura || "").toLowerCase();
+  var hasZN  = fin.indexOf("zn") >= 0;
+  var hasRAL = fin.indexOf("ral") >= 0;
 
-  // Date fasi visibili e chiare
   var fasiKeys = [
     { key:"produzione",   label:"Produzione" },
     { key:"invioZN",      label:"Invio ZN" },
@@ -881,35 +880,42 @@ function cardHTMLProd(o) {
     { key:"verniciatura", label:"Verniciatura" },
     { key:"imballo",      label:"Imballo" }
   ];
-  var fin = (o.finitura || "").toLowerCase();
-  var hasZN = fin.indexOf("zn") >= 0;
-  var hasRAL = fin.indexOf("ral") >= 0;
 
-  var fasiHTML = "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px\">";
+  var fasiHTML = "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px;margin-top:12px\">";
   fasiKeys.forEach(function(f) {
-    if (!hasZN && (f.key==="invioZN"||f.key==="ritornoZN")) return;
+    if (!hasZN  && (f.key==="invioZN"||f.key==="ritornoZN")) return;
     if (!hasRAL && (f.key==="pulizia"||f.key==="invioRAL"||f.key==="verniciatura")) return;
     var val = o[f.key];
     if (val === "-") return;
-    var fatto = (val === null);
+    var fatto   = (val === null);
     var dataStr = (!fatto && val) ? fD(val) : "";
-    var bgColor = fatto ? "var(--green,#22c55e)" : "var(--card2)";
-    var textColor = fatto ? "#fff" : "var(--accent)";
-    var labelColor = fatto ? "rgba(255,255,255,0.8)" : "var(--muted)";
-    fasiHTML += "<div style=\"background:" + bgColor + ";border-radius:8px;padding:8px 10px;text-align:center\">" +
-      "<div style=\"font-size:.68rem;color:" + labelColor + ";text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px\">" + f.label + "</div>" +
-      (fatto
-        ? "<div style=\"font-size:1.1rem;color:#fff\">\u2713</div>"
-        : (dataStr
-            ? "<div style=\"font-size:.92rem;font-weight:700;color:" + textColor + "\">" + dataStr + "</div>"
-            : "<div style=\"font-size:.8rem;color:var(--muted)\">-</div>"
-          )
-      ) +
-    "</div>";
+    var bg      = fatto ? "#22c55e" : "var(--card2)";
+    var tc      = fatto ? "#fff"    : "var(--accent)";
+    var lc      = fatto ? "rgba(255,255,255,0.75)" : "var(--muted)";
+    fasiHTML +=
+      "<div style=\"background:" + bg + ";border-radius:8px;padding:8px 6px;text-align:center\">" +
+        "<div style=\"font-size:.66rem;color:" + lc + ";text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px\">" + f.label + "</div>" +
+        (fatto
+          ? "<div style=\"font-size:1rem;color:#fff\">\u2713</div>"
+          : (dataStr
+              ? "<div style=\"font-size:.88rem;font-weight:700;color:" + tc + "\">" + dataStr + "</div>"
+              : "<div style=\"font-size:.8rem;color:var(--muted)\">-</div>"
+            )
+        ) +
+      "</div>";
   });
   fasiHTML += "</div>";
 
-  return "<div class=\"card\" style=\"--stripe-color:" + s.color + "\" data-impegno=\"" + o.impegno + "\" data-hash=\"" + prodHash(o) + "\">" +
+  var lateClass = (o.consRichiesta && o.consRichiesta < new Date().toISOString().slice(0,10)) ? "cons-late" : "";
+  var consHTML = (o.consStimata || o.consRichiesta) ?
+    "<div class=\"cons-row\">" +
+    (o.consStimata   ? "<div class=\"cons-item\"><span class=\"lbl\">Stima consegna</span><span class=\"val\">" + fD(o.consStimata) + "</span></div>" : "") +
+    (o.consRichiesta ? "<div class=\"cons-item\"><span class=\"lbl\">Data richiesta</span><span class=\"val " + lateClass + "\">" + fD(o.consRichiesta) + "</span></div>" : "") +
+    "</div>" : "";
+  var odlHTML = o.odl.length ?
+    "<div class=\"odl-row\">" + o.odl.map(function(n){ return "<span class=\"odl-chip\">ODL "+n+"</span>"; }).join("") + "</div>" : "";
+
+  return "<div class=\"card\" style=\"--stripe-color:" + s.color + "\" data-impegno=\"" + o.impegno + "\">" +
     "<div class=\"card-header\">" +
       "<div>" +
         "<div class=\"card-impegno\" style=\"font-size:1.15rem;font-weight:700\">Imp. #" + o.impegno + "</div>" +
@@ -920,13 +926,8 @@ function cardHTMLProd(o) {
     "</div>" +
     "<div class=\"progress-wrap\"><div class=\"progress-bar\" style=\"width:" + s.pct + "%;background:" + s.color + "\"></div></div>" +
     "<div class=\"steps\">" + stepHTML(steps) + "</div>" +
-    fasiHTML +
-    consHTML + odlHTML +
+    fasiHTML + consHTML + odlHTML +
   "</div>";
-}
-
-function prodHash(o) {
-  return [o.produzione,o.invioZN,o.ritornoZN,o.pulizia,o.invioRAL,o.verniciatura,o.imballo,o.consStimata,calcolaStato(o).label].join("|");
 }
 
 function renderProduzione() {
@@ -935,24 +936,32 @@ function renderProduzione() {
     return cat === "zn" || cat === "vern" || cat === "prod";
   });
 
-  var grid = document.getElementById("prod-grid");
+  var grid  = document.getElementById("prod-grid");
   var empty = document.getElementById("prod-empty");
 
   if (!list.length) { grid.innerHTML = ""; empty.style.display = ""; return; }
   empty.style.display = "none";
 
-  // Leggi stato precedente da localStorage
+  // Leggi stato salvato PRIMA del reload
   var prevStato = {};
   try { prevStato = JSON.parse(localStorage.getItem("prod_stato") || "{}"); } catch(e) {}
 
-  // Salva stato attuale
+  // Calcola stato attuale e salva
   var nuovoStato = {};
   list.forEach(function(o) { nuovoStato[o.impegno] = prodHash(o); });
   try { localStorage.setItem("prod_stato", JSON.stringify(nuovoStato)); } catch(e) {}
 
+  // Trova commesse cambiate
+  var cambiate = [];
+  Object.keys(nuovoStato).forEach(function(imp) {
+    if (prevStato[imp] && prevStato[imp] !== nuovoStato[imp]) {
+      cambiate.push(imp);
+    }
+  });
+
   grid.innerHTML = list.map(cardHTMLProd).join("");
 
-  // Aggiungi click per aprire modal (info complete)
+  // Aggiungi click per modal
   grid.querySelectorAll(".card").forEach(function(card) {
     card.addEventListener("click", function() {
       var imp = card.getAttribute("data-impegno");
@@ -961,43 +970,31 @@ function renderProduzione() {
     });
   });
 
-  // Lampeggio per commesse cambiate rispetto a prima del reload
-  list.forEach(function(o) {
-    if (prevStato[o.impegno] && prevStato[o.impegno] !== nuovoStato[o.impegno]) {
-      var card = grid.querySelector("[data-impegno=\"" + o.impegno + "\"]");
-      if (card) {
-        card.classList.add("card-aggiornata");
-        // Ferma dopo 5 minuti
-        setTimeout(function() { card.classList.remove("card-aggiornata"); }, 5 * 60 * 1000);
-      }
+  // Lampeggio per commesse cambiate
+  cambiate.forEach(function(imp) {
+    var card = grid.querySelector("[data-impegno=\"" + imp + "\"]");
+    if (card) {
+      card.classList.add("card-aggiornata");
+      setTimeout(function() { card.classList.remove("card-aggiornata"); }, 5 * 60 * 1000);
     }
   });
 }
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
-  // Ogni 2 minuti scarica il file HTML aggiornato da GitHub e rilegge i dati
+  // Salva stato attuale, poi ricarica la pagina ogni 2 minuti
   prodRefreshTimer = setInterval(function() {
-    fetch(location.href + "?t=" + Date.now())
-      .then(function(r) { return r.text(); })
-      .then(function(testo) {
-        // Estrai ORDINI_DATA aggiornato dal file scaricato
-        var m1 = testo.match(/const ORDINI_DATA\s*=\s*(\[[\s\S]*?\]);/);
-        if (!m1) return;
-        try {
-          var nuoviOrdini = eval("(" + m1[1] + ")");
-          // Confronta con stato attuale per rilevare cambiamenti
-          var prevStato = {};
-          try { prevStato = JSON.parse(localStorage.getItem("prod_stato") || "{}"); } catch(e) {}
-          // Aggiorna dati globali
-          ORDINI_DATA.length = 0;
-          nuoviOrdini.forEach(function(o) { ORDINI_DATA.push(o); });
-          // Ri-renderizza
-          renderProduzione();
-        } catch(e) { console.log("Errore parsing dati:", e); }
-      })
-      .catch(function(e) { console.log("Errore fetch:", e); });
-  }, 2 * 60 * 1000); // ogni 2 minuti
+    // Salva stato prima del reload cosi al ricaricamento sa cosa e cambiato
+    var list = ORDINI_DATA.filter(function(o) {
+      var cat = calcolaStato(o).cat;
+      return cat === "zn" || cat === "vern" || cat === "prod";
+    });
+    var statoAttuale = {};
+    list.forEach(function(o) { statoAttuale[o.impegno] = prodHash(o); });
+    try { localStorage.setItem("prod_stato", JSON.stringify(statoAttuale)); } catch(e) {}
+    // Ricarica con cache busting
+    window.location.href = window.location.pathname + "?t=" + Date.now();
+  }, 2 * 60 * 1000);
 }
 
 document.addEventListener("DOMContentLoaded", function() {
