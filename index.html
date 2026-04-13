@@ -615,6 +615,7 @@ function tryLogin() {
     document.getElementById("tab-btn-pose").style.display = isProd ? "none" : "";
     document.getElementById("tab-btn-produzione").style.display = isProd ? "" : "none";
     if (isProd) {
+      try { localStorage.setItem("prod_pin", "0000"); } catch(e) {}
       renderProduzione();
       showTab("produzione");
       avviaAutoRefreshProd();
@@ -629,6 +630,7 @@ function tryLogin() {
 }
 function logout() {
   pin = ""; currentUser = null;
+  try { localStorage.removeItem("prod_pin"); } catch(e) {}
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
   document.getElementById("app").style.display = "none";
   document.getElementById("login-screen").style.display = "flex";
@@ -998,6 +1000,29 @@ function avviaAutoRefreshProd() {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
+  // Auto-login produzione se PIN salvato (per auto-refresh)
+  try {
+    var savedPin = localStorage.getItem("prod_pin");
+    if (savedPin === "0000") {
+      // Simula login automatico
+      var u = CLIENT_PINS["0000"];
+      if (u) {
+        currentUser = u;
+        document.getElementById("login-screen").style.display = "none";
+        document.getElementById("app").style.display = "flex";
+        document.getElementById("header-sub").textContent = "Vista produzione";
+        document.getElementById("toolbar-wrap").style.display = "none";
+        document.getElementById("tab-btn-admin").style.display = "none";
+        document.getElementById("tab-btn-pin").style.display = "none";
+        document.getElementById("tab-btn-ordini").style.display = "none";
+        document.getElementById("tab-btn-pose").style.display = "none";
+        document.getElementById("tab-btn-produzione").style.display = "";
+        renderProduzione();
+        showTab("produzione");
+        avviaAutoRefreshProd();
+      }
+    }
+  } catch(e) {}
   // Logo
   // logo gia nel src HTML
 
