@@ -984,21 +984,21 @@ function renderProduzione() {
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
-  console.log("[PROD] Timer avviato - refresh ogni 30 secondi (TEST)");
+  // Inserisce un meta refresh nell head che ricarica ogni 2 minuti
+  var meta = document.createElement("meta");
+  meta.httpEquiv = "refresh";
+  meta.content = "120"; // 2 minuti
+  document.head.appendChild(meta);
+  // Salva stato ogni 90 secondi (prima del reload)
   prodRefreshTimer = setInterval(function() {
-    console.log("[PROD] Salvo stato e ricarico...");
     var list = ORDINI_DATA.filter(function(o) {
       var cat = calcolaStato(o).cat;
       return cat === "zn" || cat === "vern" || cat === "prod";
     });
     var statoAttuale = {};
     list.forEach(function(o) { statoAttuale[o.impegno] = prodHash(o); });
-    try { 
-      localStorage.setItem("prod_stato", JSON.stringify(statoAttuale));
-      console.log("[PROD] Stato salvato, ricarico ora...");
-    } catch(e) { console.log("[PROD] Errore localStorage:", e); }
-    location.reload(true);
-  }, 30 * 1000); // 30 secondi per test
+    try { localStorage.setItem("prod_stato", JSON.stringify(statoAttuale)); } catch(e) {}
+  }, 90 * 1000); // salva ogni 90 secondi
 }
 
 document.addEventListener("DOMContentLoaded", function() {
