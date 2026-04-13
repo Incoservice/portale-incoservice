@@ -984,9 +984,8 @@ function renderProduzione() {
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
-  // Salva stato attuale, poi ricarica la pagina ogni 2 minuti
   prodRefreshTimer = setInterval(function() {
-    // Salva stato prima del reload cosi al ricaricamento sa cosa e cambiato
+    // Salva stato prima del reload
     var list = ORDINI_DATA.filter(function(o) {
       var cat = calcolaStato(o).cat;
       return cat === "zn" || cat === "vern" || cat === "prod";
@@ -994,8 +993,8 @@ function avviaAutoRefreshProd() {
     var statoAttuale = {};
     list.forEach(function(o) { statoAttuale[o.impegno] = prodHash(o); });
     try { localStorage.setItem("prod_stato", JSON.stringify(statoAttuale)); } catch(e) {}
-    // Ricarica con cache busting
-    window.location.href = window.location.pathname + "?t=" + Date.now();
+    // Ricarica pagina normalmente
+    location.reload(true);
   }, 2 * 60 * 1000);
 }
 
