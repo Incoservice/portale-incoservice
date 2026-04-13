@@ -976,9 +976,28 @@ function renderProduzione() {
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
+  // Ogni 2 minuti scarica il file HTML aggiornato da GitHub e rilegge i dati
   prodRefreshTimer = setInterval(function() {
-    location.reload();
-  }, 5 * 60 * 1000);
+    fetch(location.href + "?t=" + Date.now())
+      .then(function(r) { return r.text(); })
+      .then(function(testo) {
+        // Estrai ORDINI_DATA aggiornato dal file scaricato
+        var m1 = testo.match(/const ORDINI_DATA\s*=\s*(\[[\s\S]*?\]);/);
+        if (!m1) return;
+        try {
+          var nuoviOrdini = eval("(" + m1[1] + ")");
+          // Confronta con stato attuale per rilevare cambiamenti
+          var prevStato = {};
+          try { prevStato = JSON.parse(localStorage.getItem("prod_stato") || "{}"); } catch(e) {}
+          // Aggiorna dati globali
+          ORDINI_DATA.length = 0;
+          nuoviOrdini.forEach(function(o) { ORDINI_DATA.push(o); });
+          // Ri-renderizza
+          renderProduzione();
+        } catch(e) { console.log("Errore parsing dati:", e); }
+      })
+      .catch(function(e) { console.log("Errore fetch:", e); });
+  }, 2 * 60 * 1000); // ogni 2 minuti
 }
 
 document.addEventListener("DOMContentLoaded", function() {
