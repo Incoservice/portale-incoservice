@@ -984,21 +984,17 @@ function renderProduzione() {
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
-  // Inserisce un meta refresh nell head che ricarica ogni 2 minuti
-  var meta = document.createElement("meta");
-  meta.httpEquiv = "refresh";
-  meta.content = "120"; // 2 minuti
-  document.head.appendChild(meta);
-  // Salva stato ogni 90 secondi (prima del reload)
+  var JSON_URL = "https://raw.githubusercontent.com/Incoservice/portale-incoservice/main/dati.json";
   prodRefreshTimer = setInterval(function() {
-    var list = ORDINI_DATA.filter(function(o) {
-      var cat = calcolaStato(o).cat;
-      return cat === "zn" || cat === "vern" || cat === "prod";
-    });
-    var statoAttuale = {};
-    list.forEach(function(o) { statoAttuale[o.impegno] = prodHash(o); });
-    try { localStorage.setItem("prod_stato", JSON.stringify(statoAttuale)); } catch(e) {}
-  }, 90 * 1000); // salva ogni 90 secondi
+    fetch(JSON_URL + "?nocache=" + Date.now())
+      .then(function(r) { return r.json(); })
+      .then(function(nuovi) {
+        ORDINI_DATA.length = 0;
+        nuovi.forEach(function(o) { ORDINI_DATA.push(o); });
+        renderProduzione();
+      })
+      .catch(function(e) { console.log("Errore fetch dati:", e); });
+  }, 2 * 60 * 1000);
 }
 
 document.addEventListener("DOMContentLoaded", function() {
