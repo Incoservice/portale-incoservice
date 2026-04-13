@@ -184,6 +184,17 @@
     .admin-grid{grid-template-columns:1fr}
   }
 
+
+  /* PRODUZIONE */
+  @keyframes lampeggia {
+    0%,100% { box-shadow: 0 0 0 0 rgba(234,179,8,0); }
+    50% { box-shadow: 0 0 0 12px rgba(234,179,8,0.5); border-color: #eab308; }
+  }
+  .card-aggiornata { animation: lampeggia 1s ease-in-out infinite; border: 2px solid #eab308 !important; }
+  .prod-label { font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:2px; }
+  .prod-val { font-size:.92rem; font-weight:600; color:var(--text); }
+  .prod-val.data { color:var(--accent); }
+  .prod-grid-inner { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
 </style>
 </head>
 <body>
@@ -232,6 +243,7 @@
     <div class="tab active" id="tab-btn-ordini">Produzioni</div>
     <div class="tab" id="tab-btn-pose">Pose</div>
     <div class="tab" id="tab-btn-admin" style="display:none">Admin</div>
+    <div class="tab" id="tab-btn-produzione" style="display:none">Produzione</div>
     <div class="tab" id="tab-btn-pin" style="display:none">PIN Clienti</div>
   </div>
   <main>
@@ -301,6 +313,14 @@
           <thead><tr><th>PIN</th><th>Nome cliente</th><th>Filtro commesse</th><th>Azioni</th></tr></thead>
           <tbody id="pin-tbody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <div id="tab-produzione">
+      <div id="prod-grid" class="ordini-grid"></div>
+      <div class="empty" id="prod-empty" style="display:none">
+        <div class="empty-icon"></div>
+        <div>Nessuna commessa in lavorazione</div>
       </div>
     </div>
   </main>
@@ -462,6 +482,7 @@ const POSE_DATA = [
   { settimana:"14", giorno:"Luned\u00EC", data:"2026-03-30", cliente:"Valentina Robbiati", impegno:"17", luogo:"Lomazzo", intervento:"posa recinzione Thulia", personale:"Bimax + A.M. + F.L.", note:"", confermato:null },
 ];
 const CLIENT_PINS = {
+  "0000":{ nome:"PRODUZIONE", filtro:"" },
   "1234":{ nome:"SILVIA MARIA PIZZOLATO", filtro:"SILVIA MARIA PIZZOLATO" },
   "2345":{ nome:"SEVESO ANDREA", filtro:"SEVESO ANDREA" },
   "3456":{ nome:"MAGNETTI BUILDING", filtro:"MAGNETTI BUILDING" },
@@ -583,14 +604,24 @@ function tryLogin() {
   if (u) {
     currentUser = u;
     var isAdmin = (u.nome === "ADMIN");
+    var isProd  = (u.nome === "PRODUZIONE");
     document.getElementById("login-screen").style.display = "none";
     document.getElementById("app").style.display = "flex";
-    document.getElementById("header-sub").textContent = isAdmin ? "Vista amministratore" : "Benvenuto, " + u.nome;
+    document.getElementById("header-sub").textContent = isAdmin ? "Vista amministratore" : isProd ? "Vista produzione" : "Benvenuto, " + u.nome;
     document.getElementById("toolbar-wrap").style.display = isAdmin ? "" : "none";
     document.getElementById("tab-btn-admin").style.display = isAdmin ? "" : "none";
     document.getElementById("tab-btn-pin").style.display = isAdmin ? "" : "none";
-    renderOrdini(); renderPose();
-    if (isAdmin) renderAdmin();
+    document.getElementById("tab-btn-ordini").style.display = isProd ? "none" : "";
+    document.getElementById("tab-btn-pose").style.display = isProd ? "none" : "";
+    document.getElementById("tab-btn-produzione").style.display = isProd ? "" : "none";
+    if (isProd) {
+      renderProduzione();
+      showTab("produzione");
+      avviaAutoRefreshProd();
+    } else {
+      renderOrdini(); renderPose();
+      if (isAdmin) renderAdmin();
+    }
   } else {
     document.getElementById("login-error").textContent = "PIN non valido. Riprova.";
     pin = ""; updateDots();
@@ -598,10 +629,14 @@ function tryLogin() {
 }
 function logout() {
   pin = ""; currentUser = null;
+  if (prodRefreshTimer) clearInterval(prodRefreshTimer);
   document.getElementById("app").style.display = "none";
   document.getElementById("login-screen").style.display = "flex";
   document.getElementById("tab-btn-admin").style.display = "none";
   document.getElementById("tab-btn-pin").style.display = "none";
+  document.getElementById("tab-btn-produzione").style.display = "none";
+  document.getElementById("tab-btn-ordini").style.display = "";
+  document.getElementById("tab-btn-pose").style.display = "";
   document.getElementById("toolbar-wrap").style.display = "none";
   updateDots();
   document.getElementById("login-error").textContent = "";
@@ -610,13 +645,14 @@ function logout() {
 
 // // -- TABS ---------------------------------------------------------------------
 function showTab(t) {
-  ["ordini", "pose", "admin", "pin"].forEach(function(x) {
+  ["ordini", "pose", "admin", "pin", "produzione"].forEach(function(x) {
     var tabEl = document.getElementById("tab-" + x);
     var btnEl = document.getElementById("tab-btn-" + x);
     if (tabEl) tabEl.classList.toggle("active", x === t);
     if (btnEl) btnEl.classList.toggle("active", x === t);
   });
   if (t === "pin") renderPinTable();
+  if (t === "produzione") renderProduzione();
 }
 
 // // -- CARD ---------------------------------------------------------------------
@@ -819,6 +855,99 @@ function deletePin(p) {
   renderPinTable();
 }
 
+
+// // -- VISTA PRODUZIONE -----------------------------------------------
+var prodRefreshTimer = null;
+var prodUltimoStato = {};
+
+function cardHTMLProd(o) {
+  var s = calcolaStato(o);
+  var steps = getSteps(o);
+  var lateClass = (o.consRichiesta && o.consRichiesta < new Date().toISOString().slice(0,10)) ? "cons-late" : "";
+  var consHTML = (o.consStimata || o.consRichiesta) ? (
+    "<div class=\"cons-row\">" +
+    (o.consStimata ? "<div class=\"cons-item\"><span class=\"lbl\">Stima consegna</span><span class=\"val\">" + fD(o.consStimata) + "</span></div>" : "") +
+    (o.consRichiesta ? "<div class=\"cons-item\"><span class=\"lbl\">Data richiesta</span><span class=\"val " + lateClass + "\">" + fD(o.consRichiesta) + "</span></div>" : "") +
+    "</div>"
+  ) : "";
+  var odlHTML = o.odl.length ? "<div class=\"odl-row\">" + o.odl.map(function(n) { return "<span class=\"odl-chip\">ODL " + n + "</span>"; }).join("") + "</div>" : "";
+  return "<div class=\"card\" style=\"--stripe-color:" + s.color + "\" data-impegno=\"" + o.impegno + "\">" +
+    "<div class=\"card-header\">" +
+      "<div>" +
+        "<div class=\"card-impegno\" style=\"font-size:1.15rem;font-weight:700\">Imp. #" + o.impegno + "</div>" +
+        "<div class=\"card-tipologia\">" + o.tipologia + " \u00B7 qty " + o.qty + "</div>" +
+        (o.finitura ? "<div class=\"card-info-row\"><span>\u2B24 <strong>" + o.finitura + (o.ral ? " \u2013 " + o.ral : "") + "</strong></span></div>" : "") +
+      "</div>" +
+      "<div class=\"status-badge\" style=\"background:" + s.color + "22;color:" + s.color + ";border:1px solid " + s.color + "44\">" + s.label + "</div>" +
+    "</div>" +
+    "<div class=\"progress-wrap\"><div class=\"progress-bar\" style=\"width:" + s.pct + "%;background:" + s.color + "\"></div></div>" +
+    "<div class=\"steps\">" + stepHTML(steps) + "</div>" +
+    consHTML + odlHTML +
+  "</div>";
+}
+
+function renderProduzione() {
+  var list = ORDINI_DATA.filter(function(o) {
+    var cat = calcolaStato(o).cat;
+    return cat === "zn" || cat === "vern" || cat === "prod";
+  });
+
+  var grid = document.getElementById("prod-grid");
+  var empty = document.getElementById("prod-empty");
+
+  if (!list.length) {
+    grid.innerHTML = "";
+    empty.style.display = "";
+    return;
+  }
+  empty.style.display = "none";
+
+  // Calcola hash dello stato attuale per rilevare cambiamenti
+  var nuovoStato = {};
+  list.forEach(function(o) {
+    nuovoStato[o.impegno] = JSON.stringify({
+      stato: calcolaStato(o).label,
+      invioZN: o.invioZN, ritornoZN: o.ritornoZN,
+      pulizia: o.pulizia, invioRAL: o.invioRAL,
+      verniciatura: o.verniciatura, imballo: o.imballo,
+      consStimata: o.consStimata
+    });
+  });
+
+  grid.innerHTML = list.map(cardHTMLProd).join("");
+
+  // Lampeggio per commesse cambiate
+  var ora = Date.now();
+  list.forEach(function(o) {
+    if (prodUltimoStato[o.impegno] && prodUltimoStato[o.impegno] !== nuovoStato[o.impegno]) {
+      var card = grid.querySelector("[data-impegno=\"" + o.impegno + "\"]");
+      if (card) {
+        card.classList.add("card-aggiornata");
+        card.setAttribute("data-changed-at", ora);
+      }
+    }
+  });
+
+  prodUltimoStato = nuovoStato;
+
+  // Ferma lampeggio dopo 5 minuti
+  setTimeout(function() {
+    grid.querySelectorAll(".card-aggiornata").forEach(function(c) {
+      if (Date.now() - parseInt(c.getAttribute("data-changed-at") || 0) >= 5 * 60 * 1000) {
+        c.classList.remove("card-aggiornata");
+      }
+    });
+  }, 5 * 60 * 1000 + 100);
+}
+
+function avviaAutoRefreshProd() {
+  if (prodRefreshTimer) clearInterval(prodRefreshTimer);
+  // Auto-refresh pagina ogni 5 minuti per caricare nuovi dati da GitHub
+  prodRefreshTimer = setInterval(function() {
+    location.reload();
+  }, 5 * 60 * 1000);
+}
+
 document.addEventListener("DOMContentLoaded", function() {
   // Logo
   // logo gia nel src HTML
@@ -829,6 +958,7 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("tab-btn-pose").addEventListener("click",   function() { showTab("pose"); });
   document.getElementById("tab-btn-admin").addEventListener("click",  function() { showTab("admin"); });
   document.getElementById("tab-btn-pin").addEventListener("click",   function() { showTab("pin"); });
+  document.getElementById("tab-btn-produzione").addEventListener("click", function() { showTab("produzione"); });
   document.getElementById("modal-overlay").addEventListener("click",  function(e) { if (e.target === this) closeModal(); });  document.getElementById("search-input").addEventListener("input",   renderOrdini);
   document.getElementById("pin-add-btn").addEventListener("click", addPin);
   document.getElementById("filter-stato").addEventListener("change",  renderOrdini);
