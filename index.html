@@ -858,7 +858,6 @@ function deletePin(p) {
 
 // // -- VISTA PRODUZIONE -----------------------------------------------
 var prodRefreshTimer = null;
-var prodUltimoStato = {};
 
 function cardHTMLProd(o) {
   var s = calcolaStato(o);
@@ -871,7 +870,46 @@ function cardHTMLProd(o) {
     "</div>"
   ) : "";
   var odlHTML = o.odl.length ? "<div class=\"odl-row\">" + o.odl.map(function(n) { return "<span class=\"odl-chip\">ODL " + n + "</span>"; }).join("") + "</div>" : "";
-  return "<div class=\"card\" style=\"--stripe-color:" + s.color + "\" data-impegno=\"" + o.impegno + "\">" +
+
+  // Date fasi visibili e chiare
+  var fasiKeys = [
+    { key:"produzione",   label:"Produzione" },
+    { key:"invioZN",      label:"Invio ZN" },
+    { key:"ritornoZN",    label:"Ritorno ZN" },
+    { key:"pulizia",      label:"Pulizia" },
+    { key:"invioRAL",     label:"Invio vern." },
+    { key:"verniciatura", label:"Verniciatura" },
+    { key:"imballo",      label:"Imballo" }
+  ];
+  var fin = (o.finitura || "").toLowerCase();
+  var hasZN = fin.indexOf("zn") >= 0;
+  var hasRAL = fin.indexOf("ral") >= 0;
+
+  var fasiHTML = "<div style=\"display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:12px\">";
+  fasiKeys.forEach(function(f) {
+    if (!hasZN && (f.key==="invioZN"||f.key==="ritornoZN")) return;
+    if (!hasRAL && (f.key==="pulizia"||f.key==="invioRAL"||f.key==="verniciatura")) return;
+    var val = o[f.key];
+    if (val === "-") return;
+    var fatto = (val === null);
+    var dataStr = (!fatto && val) ? fD(val) : "";
+    var bgColor = fatto ? "var(--green,#22c55e)" : "var(--card2)";
+    var textColor = fatto ? "#fff" : "var(--accent)";
+    var labelColor = fatto ? "rgba(255,255,255,0.8)" : "var(--muted)";
+    fasiHTML += "<div style=\"background:" + bgColor + ";border-radius:8px;padding:8px 10px;text-align:center\">" +
+      "<div style=\"font-size:.68rem;color:" + labelColor + ";text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px\">" + f.label + "</div>" +
+      (fatto
+        ? "<div style=\"font-size:1.1rem;color:#fff\">\u2713</div>"
+        : (dataStr
+            ? "<div style=\"font-size:.92rem;font-weight:700;color:" + textColor + "\">" + dataStr + "</div>"
+            : "<div style=\"font-size:.8rem;color:var(--muted)\">-</div>"
+          )
+      ) +
+    "</div>";
+  });
+  fasiHTML += "</div>";
+
+  return "<div class=\"card\" style=\"--stripe-color:" + s.color + "\" data-impegno=\"" + o.impegno + "\" data-hash=\"" + prodHash(o) + "\">" +
     "<div class=\"card-header\">" +
       "<div>" +
         "<div class=\"card-impegno\" style=\"font-size:1.15rem;font-weight:700\">Imp. #" + o.impegno + "</div>" +
@@ -882,8 +920,13 @@ function cardHTMLProd(o) {
     "</div>" +
     "<div class=\"progress-wrap\"><div class=\"progress-bar\" style=\"width:" + s.pct + "%;background:" + s.color + "\"></div></div>" +
     "<div class=\"steps\">" + stepHTML(steps) + "</div>" +
+    fasiHTML +
     consHTML + odlHTML +
   "</div>";
+}
+
+function prodHash(o) {
+  return [o.produzione,o.invioZN,o.ritornoZN,o.pulizia,o.invioRAL,o.verniciatura,o.imballo,o.consStimata,calcolaStato(o).label].join("|");
 }
 
 function renderProduzione() {
@@ -895,54 +938,44 @@ function renderProduzione() {
   var grid = document.getElementById("prod-grid");
   var empty = document.getElementById("prod-empty");
 
-  if (!list.length) {
-    grid.innerHTML = "";
-    empty.style.display = "";
-    return;
-  }
+  if (!list.length) { grid.innerHTML = ""; empty.style.display = ""; return; }
   empty.style.display = "none";
 
-  // Calcola hash dello stato attuale per rilevare cambiamenti
+  // Leggi stato precedente da localStorage
+  var prevStato = {};
+  try { prevStato = JSON.parse(localStorage.getItem("prod_stato") || "{}"); } catch(e) {}
+
+  // Salva stato attuale
   var nuovoStato = {};
-  list.forEach(function(o) {
-    nuovoStato[o.impegno] = JSON.stringify({
-      stato: calcolaStato(o).label,
-      invioZN: o.invioZN, ritornoZN: o.ritornoZN,
-      pulizia: o.pulizia, invioRAL: o.invioRAL,
-      verniciatura: o.verniciatura, imballo: o.imballo,
-      consStimata: o.consStimata
-    });
-  });
+  list.forEach(function(o) { nuovoStato[o.impegno] = prodHash(o); });
+  try { localStorage.setItem("prod_stato", JSON.stringify(nuovoStato)); } catch(e) {}
 
   grid.innerHTML = list.map(cardHTMLProd).join("");
 
-  // Lampeggio per commesse cambiate
-  var ora = Date.now();
+  // Aggiungi click per aprire modal (info complete)
+  grid.querySelectorAll(".card").forEach(function(card) {
+    card.addEventListener("click", function() {
+      var imp = card.getAttribute("data-impegno");
+      var o = ORDINI_DATA.find(function(x) { return x.impegno === imp; });
+      if (o) openModal(o);
+    });
+  });
+
+  // Lampeggio per commesse cambiate rispetto a prima del reload
   list.forEach(function(o) {
-    if (prodUltimoStato[o.impegno] && prodUltimoStato[o.impegno] !== nuovoStato[o.impegno]) {
+    if (prevStato[o.impegno] && prevStato[o.impegno] !== nuovoStato[o.impegno]) {
       var card = grid.querySelector("[data-impegno=\"" + o.impegno + "\"]");
       if (card) {
         card.classList.add("card-aggiornata");
-        card.setAttribute("data-changed-at", ora);
+        // Ferma dopo 5 minuti
+        setTimeout(function() { card.classList.remove("card-aggiornata"); }, 5 * 60 * 1000);
       }
     }
   });
-
-  prodUltimoStato = nuovoStato;
-
-  // Ferma lampeggio dopo 5 minuti
-  setTimeout(function() {
-    grid.querySelectorAll(".card-aggiornata").forEach(function(c) {
-      if (Date.now() - parseInt(c.getAttribute("data-changed-at") || 0) >= 5 * 60 * 1000) {
-        c.classList.remove("card-aggiornata");
-      }
-    });
-  }, 5 * 60 * 1000 + 100);
 }
 
 function avviaAutoRefreshProd() {
   if (prodRefreshTimer) clearInterval(prodRefreshTimer);
-  // Auto-refresh pagina ogni 5 minuti per caricare nuovi dati da GitHub
   prodRefreshTimer = setInterval(function() {
     location.reload();
   }, 5 * 60 * 1000);
